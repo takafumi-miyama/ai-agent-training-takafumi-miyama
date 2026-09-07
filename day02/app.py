@@ -4,6 +4,9 @@ import argparse
 import logging
 import os
 import sys
+import boto3
+import json
+from botocore.config import Config
 from typing import List, Optional
 
 from dotenv import load_dotenv
@@ -45,7 +48,37 @@ def invoke_bedrock(
     """Bedrockを呼び出して回答本文（文字列）を返します。
 
     この関数を実装すると、`python -m day02.app ...` が動くようになります。
+    """
+    config = Config(
+        connect_timeout=timeout_sec,
+        read_timeout=timeout_sec,
+    )
 
+    client = boto3.client(
+        "bedrock-runtime",
+        region_name=region,
+        config=config
+    )
+    body = json.dumps({
+        "anthropic_version": "bedrock-2023-05-31",
+        "max_tokens": max_tokens,
+        "temperature": temperature,
+        "messages": [
+            {
+                "role": "user",
+                "content": prompt,
+            }
+        ]
+    })
+    response = client.invoke_model(
+        modelId=model_id,
+        body=body,
+    )
+    response_body = json.loads(response["body"].read())
+
+    return response_body["content"][0]["text"]
+
+    """
     実装ガイド：
     - boto3のBedrock Runtimeクライアントを作る（リージョンは `region` を使う）
     - `model_id` で指定されたモデルを呼び出す
@@ -118,7 +151,7 @@ def main(argv: List[str] | None = None) -> int:
         print(str(e), file=sys.stderr)
         return 1
     except Exception as e:
-        logging.error("%s", e)
+        logging.error("%s: %s", type(e).__name__, e)
         print(str(e), file=sys.stderr)
         return 1
 
