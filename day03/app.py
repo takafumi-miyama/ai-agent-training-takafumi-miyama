@@ -3,8 +3,13 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import os
 import sys
 from typing import Any, Dict, List
+
+import boto3
+from botocore.config import Config
+from dotenv import load_dotenv
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -38,8 +43,74 @@ def generate_json(requirements: str) -> str:
     - 余計な前置き/後置きの文章を混ぜない
     - 壊れやすいので、プロンプトは短く・形式を固定する
     """
-    # TODO(TRAINEE): Generate a JSON string that passes validate_json().
-    raise NotImplementedError("Implement JSON generation")
+
+    load_dotenv()
+
+    region = os.getenv("AWS_REGION")
+    model_id = os.getenv("BEDROCK_MODEL_ID")
+
+    if not region:
+        raise ValueError("AWS_REGION is required")
+
+    if not model_id:
+        raise ValueError("BEDROCK_MODEL_ID is required")
+
+    prompt = f"""
+以下の要件を分析し、指定されたJSON形式で出力してください。
+
+JSON以外の文章は一切出力しないでください。
+Markdownのコードブロックも使用しないでください。
+
+JSON仕様:
+{{
+  "title": "依頼の要約タイトル",
+  "tasks": [
+    {{
+      "id": 1,
+      "description": "作業内容",
+      "acceptance_criteria": "完了条件"
+    }}
+  ],
+  "risks": [
+    "想定リスク"
+  ]
+}}
+
+要件:
+{requirements}
+"""
+
+    config = Config(
+        connect_timeout=30,
+        read_timeout=30,
+    )
+
+    client = boto3.client(
+        "bedrock-runtime",
+        region_name=region,
+        config=config,
+    )
+
+    body = json.dumps({
+        "anthropic_version": "bedrock-2023-05-31",
+        "max_tokens": 512,
+        "temperature": 0.2,
+        "messages": [
+            {
+                "role": "user",
+                "content": prompt,
+            }
+        ],
+    })
+
+    response = client.invoke_model(
+        modelId=model_id,
+        body=body,
+    )
+
+    response_body = json.loads(response["body"].read())
+
+    return response_body["content"][0]["text"]
 
 
 def validate_json(text: str) -> Dict[str, Any]:
